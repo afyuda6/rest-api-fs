@@ -68,7 +68,7 @@ let userHandle (request: HttpListenerRequest) (response: HttpListenerResponse) =
                 let body = extractBody request
                 let formData = parseFormEncoded body
                 match Map.tryFind "name" formData with
-                | Some name ->
+                | Some name when not (String.IsNullOrWhiteSpace(name)) ->
                     use conn = new SQLiteConnection("Data Source=rest_api_fs.db;Version=3;")
                     conn.Open()
                     let cmd = conn.CreateCommand()
@@ -78,6 +78,10 @@ let userHandle (request: HttpListenerRequest) (response: HttpListenerResponse) =
                     response.StatusCode <- int HttpStatusCode.Created
                     let responseObject = { Status = "Created"; Code = 201 }
                     JsonSerializer.Serialize(responseObject, JsonSerializerOptions(PropertyNamingPolicy = null))
+                | Some _ ->
+                    response.StatusCode <- int HttpStatusCode.BadRequest
+                    let responseObject = { Status = "Bad Request"; Code = 400; Errors = "Missing 'name' parameter" }
+                    JsonSerializer.Serialize(responseObject, JsonSerializerOptions(PropertyNamingPolicy = null))
                 | None ->
                     response.StatusCode <- int HttpStatusCode.BadRequest
                     let responseObject = { Status = "Bad Request"; Code = 400; Errors = "Missing 'name' parameter" }
@@ -86,7 +90,7 @@ let userHandle (request: HttpListenerRequest) (response: HttpListenerResponse) =
                 let body = extractBody request
                 let formData = parseFormEncoded body
                 match Map.tryFind "id" formData, Map.tryFind "name" formData with
-                | Some id, Some name ->
+                | Some id, Some name when not (String.IsNullOrWhiteSpace(id) || String.IsNullOrWhiteSpace(name)) ->
                     use conn = new SQLiteConnection("Data Source=rest_api_fs.db;Version=3;")
                     conn.Open()
                     let cmd = conn.CreateCommand()
@@ -97,11 +101,11 @@ let userHandle (request: HttpListenerRequest) (response: HttpListenerResponse) =
                     response.StatusCode <- int HttpStatusCode.OK
                     let responseObject = { Status = "OK"; Code = 200 }
                     JsonSerializer.Serialize(responseObject, JsonSerializerOptions(PropertyNamingPolicy = null))
-                | None, _ ->
+                | Some _, Some _ ->
                     response.StatusCode <- int HttpStatusCode.BadRequest
                     let responseObject = { Status = "Bad Request"; Code = 400; Errors = "Missing 'id' or 'name' parameter" }
                     JsonSerializer.Serialize(responseObject, JsonSerializerOptions(PropertyNamingPolicy = null))
-                | _, None ->
+                | _ ->
                     response.StatusCode <- int HttpStatusCode.BadRequest
                     let responseObject = { Status = "Bad Request"; Code = 400; Errors = "Missing 'id' or 'name' parameter" }
                     JsonSerializer.Serialize(responseObject, JsonSerializerOptions(PropertyNamingPolicy = null))
@@ -109,7 +113,7 @@ let userHandle (request: HttpListenerRequest) (response: HttpListenerResponse) =
                 let body = extractBody request
                 let formData = parseFormEncoded body
                 match Map.tryFind "id" formData with
-                | Some id ->
+                | Some id when not (String.IsNullOrWhiteSpace(id)) ->
                     use conn = new SQLiteConnection("Data Source=rest_api_fs.db;Version=3;")
                     conn.Open()
                     let cmd = conn.CreateCommand()
@@ -119,12 +123,16 @@ let userHandle (request: HttpListenerRequest) (response: HttpListenerResponse) =
                     response.StatusCode <- int HttpStatusCode.OK
                     let responseObject = { Status = "OK"; Code = 200 }
                     JsonSerializer.Serialize(responseObject, JsonSerializerOptions(PropertyNamingPolicy = null))
+                | Some _ ->
+                    response.StatusCode <- int HttpStatusCode.BadRequest
+                    let responseObject = { Status = "Bad Request"; Code = 400; Errors = "Missing 'id' parameter" }
+                    JsonSerializer.Serialize(responseObject, JsonSerializerOptions(PropertyNamingPolicy = null))
                 | None ->
                     response.StatusCode <- int HttpStatusCode.BadRequest
                     let responseObject = { Status = "Bad Request"; Code = 400; Errors = "Missing 'id' parameter" }
                     JsonSerializer.Serialize(responseObject, JsonSerializerOptions(PropertyNamingPolicy = null))
             else
-                response.StatusCode <- int HttpStatusCode.BadRequest
+                response.StatusCode <- int HttpStatusCode.MethodNotAllowed
                 let responseObject = { Status = "Method Not Allowed"; Code = 405 }
                 JsonSerializer.Serialize(responseObject, JsonSerializerOptions(PropertyNamingPolicy = null))
         let buffer = Encoding.UTF8.GetBytes(responseBody)
