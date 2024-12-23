@@ -1,19 +1,28 @@
 ﻿open System
-open System.Net
+open Microsoft.AspNetCore.Hosting
+open Microsoft.Extensions.Hosting
 open rest_api_fs.database.Sqlite
 open rest_api_fs.handlers.User
 
 [<EntryPoint>]
-let main _ =
+let main args =
     initializeDatabase ()
-    let listener = new HttpListener()
-    listener.Prefixes.Add("http://localhost:6012/")
-    listener.Start()
-    let rec listenForRequests () =
-        async {
-            do! userHandler listener
-            return! listenForRequests ()
-        }
-    listenForRequests () |> Async.Start
-    Console.ReadLine() |> ignore
+    let port =
+        match Environment.GetEnvironmentVariable("PORT") with
+        | null | "" -> "6012"
+        | envPort ->
+            match Int32.TryParse(envPort) with
+            | true, value -> value.ToString()
+            | _ -> "6012"
+    Host
+        .CreateDefaultBuilder(args)
+        .ConfigureWebHostDefaults(fun webHost ->
+            webHost
+                .UseKestrel()
+                .UseUrls($"http://0.0.0.0:{port}")
+                .Configure(configureApp)
+                .ConfigureServices(configureServices)
+            |> ignore)
+        .Build()
+        .Run()
     0

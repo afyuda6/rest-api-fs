@@ -7,6 +7,10 @@ open System.Net
 open System.Text.Json
 open System.Text
 open System.Text.Json.Serialization
+open System.Threading.Tasks
+open Microsoft.AspNetCore.Builder
+open Microsoft.AspNetCore.Http
+open Microsoft.Extensions.DependencyInjection
 
 type Users = {
     [<JsonPropertyName("id")>] Id: int
@@ -30,9 +34,11 @@ type ApiResponseWithErrors = {
     [<JsonPropertyName("errors")>] Errors: string
 }
 
-let extractBody (request: HttpListenerRequest) =
-    use reader = new StreamReader(request.InputStream)
-    reader.ReadToEnd()
+let extractBody (request: HttpRequest) =
+    task {
+        use reader = new StreamReader(request.Body)
+        return! reader.ReadToEndAsync()
+    }
     
 let parseFormEncoded (body: string) =
     if String.IsNullOrWhiteSpace(body) then
@@ -48,9 +54,9 @@ let parseFormEncoded (body: string) =
             else
                 None)
         |> Map.ofArray
-        
-let handleReadUsers(response: HttpListenerResponse) =
-    async {
+
+let handleReadUsers (response: HttpResponse) : Task =
+    task {
         use conn = new SQLiteConnection("Data Source=rest_api_fs.db;Version=3;")
         conn.Open()
         let cmd = conn.CreateCommand()
@@ -61,39 +67,45 @@ let handleReadUsers(response: HttpListenerResponse) =
         response.StatusCode <- int HttpStatusCode.OK
         let responseObject = { Status = "OK"; Code = 200; Data = users }
         let responseBody = JsonSerializer.Serialize(responseObject, JsonSerializerOptions(PropertyNamingPolicy = null))
-        return responseBody
+        let buffer: byte[] = Encoding.UTF8.GetBytes(responseBody)
+        response.ContentLength <- int64 buffer.Length
+        response.ContentType <- "application/json"
+        do! response.Body.WriteAsync(buffer, 0, buffer.Length)
     }
-    
-let handleCreateUser(request: HttpListenerRequest, response: HttpListenerResponse) =
-    async {
-        let body = extractBody request
+
+let handleCreateUser (request: HttpRequest, response: HttpResponse) : Task =
+    task {
+        let! body = extractBody request
         let formData = parseFormEncoded body
         let responseBody =
             match Map.tryFind "name" formData with
-                | Some name when not (String.IsNullOrWhiteSpace(name)) ->
-                    use conn = new SQLiteConnection("Data Source=rest_api_fs.db;Version=3;")
-                    conn.Open()
-                    let cmd = conn.CreateCommand()
-                    cmd.CommandText <- "INSERT INTO users (name) VALUES (@name);"
-                    cmd.Parameters.AddWithValue("@name", name) |> ignore
-                    cmd.ExecuteNonQuery() |> ignore
-                    response.StatusCode <- int HttpStatusCode.Created
-                    let responseObject = { Status = "Created"; Code = 201 }
-                    JsonSerializer.Serialize(responseObject, JsonSerializerOptions(PropertyNamingPolicy = null))
-                | Some _ ->
-                    response.StatusCode <- int HttpStatusCode.BadRequest
-                    let responseObject = { Status = "Bad Request"; Code = 400; Errors = "Missing 'name' parameter" }
-                    JsonSerializer.Serialize(responseObject, JsonSerializerOptions(PropertyNamingPolicy = null))
-                | None ->
-                    response.StatusCode <- int HttpStatusCode.BadRequest
-                    let responseObject = { Status = "Bad Request"; Code = 400; Errors = "Missing 'name' parameter" }
-                    JsonSerializer.Serialize(responseObject, JsonSerializerOptions(PropertyNamingPolicy = null))
-        return responseBody
+            | Some name when not (String.IsNullOrWhiteSpace(name)) ->
+                use conn = new SQLiteConnection("Data Source=rest_api_fs.db;Version=3;")
+                conn.Open()
+                let cmd = conn.CreateCommand()
+                cmd.CommandText <- "INSERT INTO users (name) VALUES (@name);"
+                cmd.Parameters.AddWithValue("@name", name) |> ignore
+                cmd.ExecuteNonQuery() |> ignore
+                response.StatusCode <- int HttpStatusCode.Created
+                let responseObject = { Status = "Created"; Code = 201 }
+                JsonSerializer.Serialize(responseObject, JsonSerializerOptions(PropertyNamingPolicy = null))
+            | Some _ -> 
+                response.StatusCode <- int HttpStatusCode.BadRequest
+                let responseObject = { Status = "Bad Request"; Code = 400; Errors = "Missing 'name' parameter" }
+                JsonSerializer.Serialize(responseObject, JsonSerializerOptions(PropertyNamingPolicy = null))
+            | None -> 
+                response.StatusCode <- int HttpStatusCode.BadRequest
+                let responseObject = { Status = "Bad Request"; Code = 400; Errors = "Missing 'name' parameter" }
+                JsonSerializer.Serialize(responseObject, JsonSerializerOptions(PropertyNamingPolicy = null))
+        let buffer: byte[] = Encoding.UTF8.GetBytes(responseBody)
+        response.ContentLength <- int64 buffer.Length
+        response.ContentType <- "application/json"
+        do! response.Body.WriteAsync(buffer, 0, buffer.Length)
     }
-    
-let handleUpdateUser(request: HttpListenerRequest, response: HttpListenerResponse)=
-    async {
-        let body = extractBody request
+
+let handleUpdateUser (request: HttpRequest, response: HttpResponse) : Task =
+    task {
+        let! body = extractBody request
         let formData = parseFormEncoded body
         let responseBody =
             match Map.tryFind "id" formData, Map.tryFind "name" formData with
@@ -116,12 +128,15 @@ let handleUpdateUser(request: HttpListenerRequest, response: HttpListenerRespons
                 response.StatusCode <- int HttpStatusCode.BadRequest
                 let responseObject = { Status = "Bad Request"; Code = 400; Errors = "Missing 'id' or 'name' parameter" }
                 JsonSerializer.Serialize(responseObject, JsonSerializerOptions(PropertyNamingPolicy = null))
-        return responseBody
+        let buffer: byte[] = Encoding.UTF8.GetBytes(responseBody)
+        response.ContentLength <- int64 buffer.Length
+        response.ContentType <- "application/json"
+        do! response.Body.WriteAsync(buffer, 0, buffer.Length)
     }
-    
-let handleDeleteUser(request: HttpListenerRequest, response: HttpListenerResponse) =
-    async {
-        let body = extractBody request
+
+let handleDeleteUser (request: HttpRequest, response: HttpResponse) : Task =
+    task {
+        let! body = extractBody request
         let formData = parseFormEncoded body
         let responseBody =
             match Map.tryFind "id" formData with
@@ -143,42 +158,46 @@ let handleDeleteUser(request: HttpListenerRequest, response: HttpListenerRespons
                 response.StatusCode <- int HttpStatusCode.BadRequest
                 let responseObject = { Status = "Bad Request"; Code = 400; Errors = "Missing 'id' parameter" }
                 JsonSerializer.Serialize(responseObject, JsonSerializerOptions(PropertyNamingPolicy = null))
-        return responseBody
+        let buffer: byte[] = Encoding.UTF8.GetBytes(responseBody)
+        response.ContentLength <- int64 buffer.Length
+        response.ContentType <- "application/json"
+        do! response.Body.WriteAsync(buffer, 0, buffer.Length)
     }
 
-let userHandler(listener: HttpListener) =
-    let rec listenForRequests () =
-        async {
-            let! context = listener.GetContextAsync() |> Async.AwaitTask
-            let request = context.Request
-            let response = context.Response
-            try
-                let! responseBody =
-                    if request.Url.AbsolutePath = "/users" || request.Url.AbsolutePath = "/users/" then
-                        match request.HttpMethod with
-                        | "GET" -> handleReadUsers(response)
-                        | "POST" -> handleCreateUser(request, response)
-                        | "PUT" -> handleUpdateUser(request, response)
-                        | "DELETE" -> handleDeleteUser(request, response)
-                        | _ ->
-                            async {
-                                response.StatusCode <- int HttpStatusCode.MethodNotAllowed
-                                let responseObject = { Status = "Method Not Allowed"; Code = 405 }
-                                return JsonSerializer.Serialize(responseObject, JsonSerializerOptions(PropertyNamingPolicy = null))
-                            }
-                    else
-                        async {
-                            response.StatusCode <- int HttpStatusCode.NotFound
-                            let responseObject = { Status = "Not Found"; Code = 404 }
-                            return JsonSerializer.Serialize(responseObject, JsonSerializerOptions(PropertyNamingPolicy = null))
-                        }
-                let buffer: byte[] = Encoding.UTF8.GetBytes(responseBody)
-                response.ContentLength64 <- int64 buffer.Length
-                response.ContentType <- "application/json"
-                do! response.OutputStream.AsyncWrite(buffer, 0, buffer.Length)
-                response.OutputStream.Close()
-            with ex ->
-                response.OutputStream.Close()
-            return! listenForRequests ()
-        }
-    listenForRequests ()
+let configureApp (app: IApplicationBuilder) =
+    app.UseRouting()
+       .UseEndpoints(fun endpoints ->
+           endpoints.MapGet("/users", fun context ->
+               handleReadUsers(context.Response)
+           ) |> ignore
+           endpoints.MapPost("/users", fun context ->
+               handleCreateUser(context.Request, context.Response)
+           ) |> ignore
+           endpoints.MapPut("/users", fun context ->
+               handleUpdateUser(context.Request, context.Response)
+           ) |> ignore
+           endpoints.MapDelete("/users", fun context ->
+               handleDeleteUser(context.Request, context.Response)
+           ) |> ignore
+           endpoints.Map("/users", fun context ->
+               context.Response.StatusCode <- int HttpStatusCode.MethodNotAllowed
+               let responseObject = { Status = "Method Not Allowed"; Code = 405; }
+               let responseBody = JsonSerializer.Serialize(responseObject, JsonSerializerOptions(PropertyNamingPolicy = null))
+               let buffer: byte[] = Encoding.UTF8.GetBytes(responseBody)
+               context.Response.ContentLength <- int64 buffer.Length
+               context.Response.ContentType <- "application/json"
+               context.Response.Body.WriteAsync(buffer, 0, buffer.Length)
+           ) |> ignore
+           endpoints.MapFallback(fun context ->
+               context.Response.StatusCode <- int HttpStatusCode.NotFound
+               let responseObject = { Status = "Not Found"; Code = 404; }
+               let responseBody = JsonSerializer.Serialize(responseObject, JsonSerializerOptions(PropertyNamingPolicy = null))
+               let buffer: byte[] = Encoding.UTF8.GetBytes(responseBody)
+               context.Response.ContentLength <- int64 buffer.Length
+               context.Response.ContentType <- "application/json"
+               context.Response.Body.WriteAsync(buffer, 0, buffer.Length)
+           ) |> ignore
+       ) |> ignore
+
+let configureServices (services: IServiceCollection) =
+    services.AddRouting() |> ignore

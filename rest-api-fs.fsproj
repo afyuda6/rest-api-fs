@@ -12,9 +12,11 @@
         <Compile Include="Main.fs" />
         <Content Include=".gitignore" />
         <Content Include="README.md" />
+        <Content Include="Dockerfile" />
     </ItemGroup>
 
     <ItemGroup>
+      <PackageReference Include="Microsoft.AspNetCore.App" />
       <PackageReference Include="System.Data.SQLite" Version="1.0.119" />
       <PackageReference Include="System.Text.Json" Version="9.0.0" />
     </ItemGroup>
