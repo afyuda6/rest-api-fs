@@ -165,7 +165,8 @@ let handleDeleteUser (request: HttpRequest, response: HttpResponse) : Task =
     }
 
 let configureApp (app: IApplicationBuilder) =
-    app.UseRouting()
+    app.UseCors("AllowSpecificOrigins")
+       .UseRouting()
        .UseEndpoints(fun endpoints ->
            endpoints.MapGet("/users", fun context ->
                handleReadUsers(context.Response)
@@ -178,6 +179,15 @@ let configureApp (app: IApplicationBuilder) =
            ) |> ignore
            endpoints.MapDelete("/users", fun context ->
                handleDeleteUser(context.Request, context.Response)
+           ) |> ignore
+           endpoints.MapMethods("/users", [HttpMethods.Options], fun context ->
+               context.Response.StatusCode <- int HttpStatusCode.OK
+               let responseObject = ""
+               let responseBody = JsonSerializer.Serialize(responseObject, JsonSerializerOptions(PropertyNamingPolicy = null))
+               let buffer: byte[] = Encoding.UTF8.GetBytes(responseBody)
+               context.Response.ContentLength <- int64 buffer.Length
+               context.Response.ContentType <- "application/json"
+               context.Response.Body.WriteAsync(buffer, 0, buffer.Length)
            ) |> ignore
            endpoints.Map("/users", fun context ->
                context.Response.StatusCode <- int HttpStatusCode.MethodNotAllowed
@@ -201,3 +211,10 @@ let configureApp (app: IApplicationBuilder) =
 
 let configureServices (services: IServiceCollection) =
     services.AddRouting() |> ignore
+    services.AddCors(fun options ->
+        options.AddPolicy("AllowSpecificOrigins", fun policy ->
+            policy.AllowAnyOrigin()
+                   .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                   .WithHeaders("Content-Type") |> ignore
+        )
+    ) |> ignore
